@@ -238,7 +238,8 @@ class AlignModule(nn.Module):
             CCA.append(CCA_i)
         bi_attn_emb = torch.cat(CCA, dim=1)
         # 三模态交互特征
-        tri_attn_emb = self.tri_attn_model(latent_emb_mod)
+        # tri_attn_emb = self.tri_attn_model(latent_emb_mod)
+        tri_attn_emb = None
 
         return bi_attn_emb, tri_attn_emb
 
@@ -291,7 +292,7 @@ class PersModel(nn.Module):
         super(PersModel, self).__init__()
 
         # input: align_emb (5 * nfeat)  het_emb (1 * nfeat), debate meta-data (2)
-        ninp = (1 + 2 + 3) * nfeat + 2
+        ninp = (1 + 2) * nfeat + 2
         nout = 1
         self.fc1 = nn.Linear(ninp, 2 * ninp)
         self.dropout = nn.Dropout(dropout)

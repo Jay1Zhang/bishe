@@ -8,7 +8,8 @@ from utils import *
 
 def gen_align_emb(bi_attn_emb, tri_attn_emb):
     # generate H^align with H^s_m
-    align_emb = torch.cat([bi_attn_emb, tri_attn_emb], dim=2)    # 在特征维度上拼接
+    # align_emb = torch.cat([bi_attn_emb, tri_attn_emb], dim=2)    # 在特征维度上拼接
+    align_emb = bi_attn_emb
     align_emb = torch.mean(align_emb, dim=1)    # 在序列维度上取平均
     return align_emb
 
