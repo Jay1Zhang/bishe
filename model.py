@@ -131,11 +131,6 @@ class LatentModule(nn.Module):
 class BiAttnModel(nn.Module):
     def __init__(self):
         super(BiAttnModel, self).__init__()
-        self.d = 32
-        self.fc1 = nn.Linear(2*self.d, 2*self.d)
-        self.tanh = torch.tanh
-        self.fc2 = nn.Linear(2*self.d, 1, bias=False)
-        self.softmax = F.softmax
 
     # Input:    latent_emb_mod 3 x (N, u, d)
     # func:     首先由单模态特征矩阵F生成三个双模态融合信息
@@ -145,16 +140,8 @@ class BiAttnModel(nn.Module):
     def forward(self, latent_emb_mod):
         a_emb, v_emb, l_emb = latent_emb_mod['a'], latent_emb_mod['v'], latent_emb_mod['l']
         attnAV, attnAL, attnVL = self.biAttn(a_emb, v_emb), self.biAttn(a_emb, l_emb), self.biAttn(v_emb, l_emb)
-        u = a_emb.size()[1]
-        CCA = []
-        for i in range(u):
-            Bi = torch.cat([attnAV[:, 0:1, :], attnAL[:, 0:1, :], attnVL[:, 0:1, :]], dim=1)
-            Ci = self.fc2(self.tanh(self.fc1(Bi)))
-            alpha = self.softmax(Ci, dim=0)
-            CCA_i = torch.matmul(alpha.transpose(1, 2), Bi)
-            CCA.append(CCA_i)
-        CCA = torch.cat(CCA, dim=1)
-        return CCA
+
+        return attnAV, attnAL, attnVL
 
     def biAttn(self, feat1, feat2):
         # Input:    feat1, feat2 (N, u, d)
@@ -227,24 +214,31 @@ class AlignModule(nn.Module):
         self.bi_attn_model = BiAttnModel()
         self.tri_attn_model = TriAttnModel()
 
+        self.d = 32
+        self.fc1 = nn.Linear(2 * self.d, 2 * self.d)
+        self.tanh = torch.tanh
+        self.fc2 = nn.Linear(2 * self.d, 1, bias=False)
+        self.softmax = F.softmax
+
     # Input:    latent_emb_mod 3 x (N, u, d)
     # func:     首先由单模态特征矩阵F生成三个双模态融合信息
     #           但如果直接将这三个 Attn(u, 2d) 的矩阵拼接，特征维度将大大上升
     #           因此采用一种全局注意力机制对这部分融合信息进行进一步的筛选，压缩到(u, 2d)
     # Output:   CCA-Bi(N, u, 2d) + CCA-Tri(N, u, 3d)
     def forward(self, latent_emb_mod):
+        # 双模态交互特征
         attnAV, attnAL, attnVL = self.bi_attn_model(latent_emb_mod)
-        tri_attn_emb = self.tri_attn_model(latent_emb_mod)
-
         seq_len = attnAV.size()[1]
-        bi_attn_emb = []
+        CCA = []
         for i in range(seq_len):
             Bi = torch.cat([attnAV[:, 0:1, :], attnAL[:, 0:1, :], attnVL[:, 0:1, :]], dim=1)
             Ci = self.fc2(self.tanh(self.fc1(Bi)))
             alpha = self.softmax(Ci, dim=0)
             CCA_i = torch.matmul(alpha.transpose(1, 2), Bi)
-            bi_attn_emb.append(CCA_i)
-        bi_attn_emb = torch.cat(bi_attn_emb, dim=1)
+            CCA.append(CCA_i)
+        bi_attn_emb = torch.cat(CCA, dim=1)
+        # 三模态交互特征
+        tri_attn_emb = self.tri_attn_model(latent_emb_mod)
 
         return bi_attn_emb, tri_attn_emb
 
@@ -265,13 +259,14 @@ class RefModel(nn.Module):
 
     def forward(self, latent_emb):
         # get $Y^ref_m$ with $H^latent_m$
-        x = self.fc1(latent_emb)
-        x = F.relu(self.dropout(x))
-        x = self.fc2(x)
-        x = F.relu(x)
-        x = self.fc3(x)
-        x = self.sigm(x)
-        return x
+        x = torch.mean(latent_emb, dim=1)
+        x1 = self.fc1(x)
+        x2 = F.relu(self.dropout(x1))
+        x3 = self.fc2(x2)
+        x4 = F.relu(x3)
+        x5 = self.fc3(x4)
+        out = self.sigm(x5)
+        return out
 
 
 class HetModule(nn.Module):
@@ -295,8 +290,8 @@ class PersModel(nn.Module):
     def __init__(self, nmod=3, nfeat=32, dropout=0.4):
         super(PersModel, self).__init__()
 
-        # input: align_emb (5 * nfeat)  het_emb (nmod * nfeat), debate meta-data (2)
-        ninp = (nmod + 2 + 3) * nfeat + 2
+        # input: align_emb (5 * nfeat)  het_emb (1 * nfeat), debate meta-data (2)
+        ninp = (1 + 2 + 3) * nfeat + 2
         nout = 1
         self.fc1 = nn.Linear(ninp, 2 * ninp)
         self.dropout = nn.Dropout(dropout)
@@ -305,9 +300,10 @@ class PersModel(nn.Module):
 
     # Input: attn_emb(N, 2d + 3d), het_emb(N, d), meta_emb(N, 2)
     def forward(self, align_emb, het_emb, meta_emb):
-        x = torch.cat([align_emb, het_emb, meta_emb], dim=1)
-        x = self.fc1(x)
-        x = F.relu(self.dropout(x))
-        x = self.fc2(x)
-        return self.sigm(x)
+        x1 = torch.cat([align_emb, het_emb, meta_emb], dim=1)
+        x2 = self.fc1(x1)
+        x3 = F.relu(self.dropout(x2))
+        x4 = self.fc2(x3)
+        out = self.sigm(x4)
+        return out
 

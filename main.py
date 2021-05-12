@@ -33,7 +33,7 @@ if __name__ == '__main__':
     TEST_MODE = args.test_mode
     VERBOSE = args.verbose
     #TEST_MODE = True
-    VERBOSE = True
+    #VERBOSE = True
 
     #############
 
@@ -71,7 +71,8 @@ if __name__ == '__main__':
     # 3 - Initialize reference models and weights: w_a, w_v, w_l
     weight_mod = {mod: 1. / len(MODS) for mod in MODS}
     # initialize het models
-    het_models = {'het': model.HetModule(MODS).to(device)}
+    het_models = {mod: model.RefModel().to(device) for mod in MODS}
+    # het_models = {'het': model.HetModule(MODS).to(device)}
     het_params = get_hyper_params(het_models)
     het_optim = optim.Adam(het_params, lr=LR, weight_decay=W_DECAY)
 

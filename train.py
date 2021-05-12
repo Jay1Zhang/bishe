@@ -13,11 +13,11 @@ def gen_align_emb(bi_attn_emb, tri_attn_emb):
     return align_emb
 
 
-def gen_het_emb(latent_emb_mod, weight_mod, MODS):
+def gen_het_emb(MODS, latent_emb_mod, weight_mod):
     # generate H^het with H^latent_m, w_m
     het_emb_mod = {}
     for mod in MODS:
-        het_emb_mod[mod] = weight_mod[mod] * latent_emb_mod[mod]
+        het_emb_mod[mod] = torch.tensor(weight_mod[mod]) * latent_emb_mod[mod]
     # het_emb_mod = [torch.tensor(weight_mod[mod]) * latent_emb_mod[mod] for mod in MODS]
     het_emb = torch.cat([v for v in het_emb_mod.values()], dim=1)   # 在序列维度上拼接
     het_emb = torch.max(het_emb, dim=1)[0]  # 在序列维度上取max, 更加符合前期推理
@@ -41,8 +41,8 @@ def inference(MODS, sample_batched, m2p2_models, het_models, weight_mod):
     het_emb = gen_het_emb(MODS, latent_emb_mod, weight_mod)
     meta_emb = gen_meta_emb(sample_batched)
 
+    y_pred_ref_mod = {mod: het_models[mod](latent_emb_mod[mod]) for mod in MODS}
     y_pred = m2p2_models['pers'](align_emb, het_emb, meta_emb)   # (N, 1)
-    y_pred_ref_mod = het_models['het'](latent_emb_mod)
     y_true = sample_batched['ed_vote'].float().to(device)   # (N)
 
     # calc loss
@@ -71,10 +71,10 @@ def train_m2p2(MODS, iterator, m2p2_models, m2p2_optim, m2p2_scheduler,
         total_loss_ref += loss_ref_weighted.item()
 
         # backward
-        loss_pers.backward()
-        m2p2_optim.step()
-        loss_ref_weighted.backward()
+        loss_ref_weighted.backward(retain_graph=True)
         het_optim.step()
+        loss_pers.backward()   # 防止缓冲区被释放
+        m2p2_optim.step()
 
     m2p2_scheduler.step()
     aver_loss_pers = total_loss_pers / (i_batch + 1)
@@ -96,7 +96,8 @@ def eval_m2p2(MODS, iterator, m2p2_models, het_models, weight_mod):
             loss_pers, loss_ref_mod, loss_ref_weighted = \
                 inference(MODS, sample_batched, m2p2_models, het_models, weight_mod)
             total_loss_pers += loss_pers.item()
-            total_loss_ref_mod += {mod: loss_ref_mod[mod].item() for mod in MODS}
+            for mod in MODS:
+                total_loss_ref_mod[mod] += loss_ref_mod[mod].item()
 
     aver_loss_pers = total_loss_pers / (i_batch + 1)
     aver_loss_ref_mod = {mod: total_loss_ref_mod[mod] / (i_batch + 1) for mod in MODS}

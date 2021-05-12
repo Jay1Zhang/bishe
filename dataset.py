@@ -13,8 +13,8 @@ from utils import *
 
 # get frame number: filename[st:ed] from the filename string
 def get_frame_no(filename, form='npy'):
-    # return filename[filename.rfind('/') + 1: filename.rfind(f'.{form}')]  # Linux
-    return filename[filename.rfind('\\') + 1 : filename.rfind(f'.{form}')]  # Win10
+    return filename[filename.rfind('/') + 1: filename.rfind(f'.{form}')]  # Linux
+    # return filename[filename.rfind('\\') + 1 : filename.rfind(f'.{form}')]  # Win10
 
 
 def load_segs(fold, filename, mode):

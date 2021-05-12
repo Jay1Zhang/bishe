@@ -5,7 +5,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-import torch.nn.functional as F
+from scipy.special import softmax
 
 # file path
 FOLDS_DIR = './folds_split/'    # folds directory
@@ -40,7 +40,7 @@ def config_device():
     torch.manual_seed(3)    # 设置seed能够保证代码在同一设备上的可复现性
     torch.cuda.manual_seed_all(3)
     torch.backends.cudnn.deterministic = True
-    # torch.autograd.set_detect_anomaly(True)
+    torch.autograd.set_detect_anomaly(True)
 
 
 def get_hyper_params(model_dict):
@@ -89,14 +89,15 @@ def loadModel(FOLD, model_dict):
 
 def calcPersLoss(pred, target):
     criterion = nn.MSELoss()    # input: (N), (N)
-    return criterion(pred[:, 0], target)
+    # pred = torch.squeeze(pred, dim=-1)
+    return criterion(pred[:, 0], target)  # pred[:, 0]
 
 
 def update_weight_mod(MODS, old_weight_mod, loss_ref_mod):
     # calc tilde weight by softmax
     x = -BETA * np.array(list(loss_ref_mod.values()))
     # tilde_weights = torch.nn.functional.softmax(x, dim=0)
-    tilde_weights = F.softmax(x, dim=0)
+    tilde_weights = softmax(x)
     tilde_weight_mod = dict(zip(MODS, tilde_weights))
 
     # calc new weight mod
